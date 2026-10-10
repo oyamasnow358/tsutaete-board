@@ -24,8 +24,9 @@
      せってい（この 端末）
      ============================================================ */
   const ST_KEY = 'mieel-tsutaete-st';
-  const st = Object.assign({ kid: '', sel: 'tap', holdMs: 600, guard: 700, scan: false, scanMs: 1500, sayOnTap: true, showBig: true, preview: true, rate: 0.95, pitch: 1.05, voiceName: '', modeling: false }, (() => { try { return JSON.parse(localStorage.getItem(ST_KEY) || '{}'); } catch (e) { return {}; } })());
+  const st = Object.assign({ kid: '', sel: 'tap', holdMs: 600, guard: 700, scan: false, scanMs: 1500, sayOnTap: true, showBig: true, preview: true, rate: 0.8, pitch: 1.05, voiceName: '', modeling: false, bigBack: 10 }, (() => { try { return JSON.parse(localStorage.getItem(ST_KEY) || '{}'); } catch (e) { return {}; } })());
   st.modeling = false;
+  if (!st.v2) { if (st.rate === 0.95) st.rate = 0.8; st.v2 = 1; }   // はじめの こえが はやすぎたので ゆっくりに
   const saveSt = () => { try { localStorage.setItem(ST_KEY, JSON.stringify(st)); } catch (e) { /* 無視 */ } };
 
   /* ============================================================
@@ -333,12 +334,25 @@
     const parts = one ? null : composeParts(cards, { polite: k.polite });
     const txt = h('div', { class: 'txt' }, parts ? parts.map(p => paint(h('span', null, p.t), p.c)).reduce((a, s, i) => { if (i && !/、$/.test(parts[i - 1].t)) a.push(' '); a.push(s); return a; }, []) : text);
     const pics = h('div', { class: 'pics' }, cards.map((c, i) => { const d = paint(h('div', { class: 'pc', style: 'animation-delay:' + (i * 0.08) + 's' }, h('span', { class: 'emo' }, c.e || '⭐')), c); photoInto(d, c); return d; }));
-    const o = h('div', { class: 'show' + (cards.length === 1 ? ' one' : '') }, h('div', { class: 'inner' }, pics, txt));
-    const close = () => { o.remove(); if (B.spoken) { resetBoard(); } render(); };
+    const inner = h('div', { class: 'inner', 'aria-label': 'もう いちど 話す' }, pics, txt);
+    const bar = h('div', { class: 'backbar' });
+    const o = h('div', { class: 'show' + (cards.length === 1 ? ' one' : '') }, bar, inner);
+    let tm = null;
+    const close = () => { clearTimeout(tm); if (!o.isConnected) return; o.remove(); if (B.spoken) { resetBoard(); } render(); };
+    // 時間が たつと カードの 画面へ もどる（話しなおすと 時間は はじめから）
+    const arm = () => {
+      clearTimeout(tm); bar.style.transition = 'none'; bar.style.width = '100%';
+      if (!st.bigBack) { bar.hidden = true; return; }
+      requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.transition = 'width ' + st.bigBack + 's linear'; bar.style.width = '0%'; }));
+      tm = setTimeout(close, st.bigBack * 1000 + 300);
+    };
+    // 写真や 文を もう いちど タッチ → もう いちど 話す（小さな ボタンを さがさなくて よい）
+    const again = () => { if (one && cards[0]) sayOr(text, cards[0].msgAudioId); else say(text); pics.querySelectorAll('.pc').forEach(p => { p.style.animation = 'none'; void p.offsetWidth; p.style.animation = ''; }); arm(); };
+    bindSel(inner, again, true);
     o.append(h('div', { class: 'sacts' },
-      bindSel(h('button', { type: 'button', class: 'btn sub' }, '🔁 もういちど'), () => { if (one && cards[0]) sayOr(text, cards[0].msgAudioId); else say(text); }, true),
-      bindSel(h('button', { type: 'button', class: 'btn sub' }, '🔄 むきを かえる'), () => o.classList.toggle('flip'), true),
-      bindSel(h('button', { type: 'button', class: 'btn' }, '✔ とじる'), close, true)));
+      bindSel(h('button', { type: 'button', class: 'btn back' }, '◀ もどる'), close, true),
+      bindSel(h('button', { type: 'button', class: 'btn sub' }, '🔄 むきを かえる'), () => { o.classList.toggle('flip'); arm(); }, true)));
+    arm();
     document.body.append(o);
     requestAnimationFrame(scanRefresh);
   }
@@ -585,9 +599,10 @@
       st.scan ? stSeg('スキャンの はやさ', 'scanMs', [[1000, '1びょう'], [1500, '1.5'], [2000, '2'], [3000, '3']]) : null));
     b.append(h('div', { class: 'box' }, h('h3', null, '🔊 こえ・ひょうじ'),
       stSeg('カードを えらんだら', 'sayOnTap', [[true, 'ことばを よむ'], [false, 'よまない']], 'えらぶ たびに 声が 出ると、自分で たしかめられます（聴覚フィードバック）'),
-      stSeg('話したら', 'showBig', [[true, '大きく 見せる'], [false, '見せない']], '相手に 画面を 見せて 伝えられます。「むきを かえる」で 向かいの 人にも 読めます'),
+      stSeg('話したら', 'showBig', [[true, '大きく 見せる'], [false, '見せない']], '相手に 画面を 見せて 伝えられます。写真や 文を タッチすると もう いちど 話します。「むきを かえる」で 向かいの 人にも 読めます'),
       stSeg('文を 字でも 出す', 'preview', [[true, '出す'], [false, '出さない']]),
-      stSeg('こえの はやさ', 'rate', [[0.75, 'ゆっくり'], [0.95, 'ふつう'], [1.15, 'はやめ']]),
+      stSeg('こえの はやさ', 'rate', [[0.65, 'とても ゆっくり'], [0.8, 'ゆっくり（はじめ）'], [0.95, 'ふつう'], [1.1, 'はやめ']]),
+      stSeg('大きな 画面から もどる', 'bigBack', [[5, '5びょうで'], [10, '10びょうで'], [20, '20びょうで'], [0, 'もどらない']], '時間が たつと 自動で カードの 画面に もどります。大きな 画面の 写真や 文を タッチすると、もう いちど 話します'),
       stSeg('こえの 高さ', 'pitch', [[0.9, 'ひくめ'], [1.05, 'ふつう'], [1.35, 'たかめ（こどもらしく）']]),
       jaVoices.length > 1 ? stSeg('こえの しゅるい', 'voiceName', [['', 'おまかせ']].concat(jaVoices.slice(0, 6).map(v => [v.name, v.name.replace(/\(.*\)|Microsoft|Google|日本語|Japanese|Online|Natural/gi, '').trim() || v.name]))) : null));
     b.append(h('div', { class: 'box' }, h('h3', null, '👩‍🏫 モデリング'),
@@ -656,6 +671,8 @@
   makeTouchIcon();
   let rsT = null;
   window.addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(() => { if (KID() && KID().level >= 2 && KID().level <= 3) render(); else fitAll(); }, 150); });
+  // 写真・声・カードが 消されにくいように（ブラウザに 「のこして」と たのむ）
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) { /* 無視 */ }
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
   (async () => {
     try { KIDS = (await DB.all('kids')).sort((a, b) => a.at - b.at); (await DB.all('cards')).forEach(c => { OVR[c.id] = c; }); } catch (e) { console.warn(e); }
